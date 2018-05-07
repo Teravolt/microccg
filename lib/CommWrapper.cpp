@@ -22,14 +22,14 @@ using std::map;
 using boost::asio::ip::tcp;
 
 void CommWrapper::getInitialInfo(string & budget) {
-    std::cout << "Acquiring initial budget and UTT: " << std::endl;
+    //std::cout << "Acquiring initial budget and UTT: " << std::endl;
 
     budget = receiveMessage();
 
     //size_t length = socket_.read_some(boost::asio::buffer(data_,max_length), error);
 
     /* Budget: time_limit iteration_limit */
-    std::cout << "Budget: " << budget << std::endl;
+    //std::cout << "Budget: " << budget << std::endl;
     //std::cout.write(data_,length); 
 
     //boost::asio::write(socket_,boost::asio::buffer("ack\n",4),error);
@@ -37,7 +37,7 @@ void CommWrapper::getInitialInfo(string & budget) {
     string utt = receiveMessage();
 
     //length = socket_.read_some(boost::asio::buffer(data_,max_length), error);
-    std::cout << "UTT: " << utt << std::endl;
+    //std::cout << "UTT: " << utt << std::endl;
 
     //boost::asio::write(socket_,boost::asio::buffer("ack\n",4),error);
 }
