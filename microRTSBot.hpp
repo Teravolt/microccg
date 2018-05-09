@@ -294,11 +294,11 @@ class MicroRTSBot : Bot {
         lexCore::Lexicon recLexicon;
         lexCore::Lexicon planLexicon;
 
-        lexCore::Driver *recDriver;
-        lexCore::Driver *planDriver;
+        lexCore::Driver *recDriver = NULL;
+        lexCore::Driver *planDriver = NULL;
 
-        lexRec::Recognizer *recAPI;
-        lexAdGen::AdversarialGenerator *genAPI;
+        lexRec::Recognizer *recAPI = NULL;
+        lexAdGen::AdversarialGenerator *genAPI = NULL;
 
         vector<string> categoryRemoved = { "moveC", "produceC", "attackC", "returnC", "harvestC" };
 
