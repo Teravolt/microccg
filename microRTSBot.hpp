@@ -45,58 +45,62 @@ class MicroRTSBot : Bot {
             /* Start up Planner and Plan Recognizer here */
             if ( genAPI == NULL ) {
                 if ( DEBUGGING > 0 ) { std::cout << "Starting Adversarial Generator" << std::endl; }
-                genAPI = new lexAdGen::AdversarialGenerator(&planLexicon,&recLexicon,comm,timeLimit);
+                genAPI = new lexAdGen::AdversarialGenerator(&planLexicon,&planLexicon,comm,timeLimit);
             }
 
+            genAPI->con = 20;
             /* Start reading from MicroRTS */
             while ( 1 ) {
 
                 genAPI->start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-                /* Check to see if we reached the end of the game */
-                bool isGameOver = false;
-                map< string, map< string, string > > curState;
-                vector< vector< std::pair<string, string > > > actions = comm->readXMLNonAbstract( curState, isGameOver );
+                string gameover = comm->receiveMessage();
+                if ( gameover == "gameover\n" ) { break; }
+                //std::cout << "Game over: " << gameover << std::endl;
+                ///* Check to see if we reached the end of the game */
+                //bool isGameOver = false;
+                //map< string, map< string, string > > curState;
+                //vector< vector< std::pair<string, string > > > actions = comm->readXMLNonAbstract( curState, isGameOver );
 
-                if ( isGameOver ) { break; }
+                //if ( isGameOver ) { break; }
 
-                /* Even if we don't read any actions, we still want to parse the plan to get a more accurate parse */
-                for ( auto act : actions ) {
-                    string tmp = formatAction(act); 
-                    if ( DEBUGGING > 0 ) { std::cout << "Action: " << tmp << std::endl; }
-                    trace.push_back(tmp);
-                }
+                ///* Even if we don't read any actions, we still want to parse the plan to get a more accurate parse */
+                //for ( auto act : actions ) {
+                //    string tmp = formatAction(act); 
+                //    if ( DEBUGGING > 0 ) { std::cout << "Action: " << tmp << std::endl; }
+                //    trace.push_back(tmp);
+                //}
 
-                /* Add any objects that are not in the grammar (mostly units) */
-                for ( auto unit : curState ) {
-                    string tmp = unit.second.at("type") + unit.first;
-                    for ( int i = 0; i < (int)tmp.size(); i++ ) { tmp[i] = tolower(tmp[i]); }
+                ///* Add any objects that are not in the grammar (mostly units) */
+                //for ( auto unit : curState ) {
+                //    string tmp = unit.second.at("type") + unit.first;
+                //    for ( int i = 0; i < (int)tmp.size(); i++ ) { tmp[i] = tolower(tmp[i]); }
 
-                    lexCore::Atom u = lexCore::Atom::addSymbol(tmp.c_str(), tmp.length());
+                //    lexCore::Atom u = lexCore::Atom::addSymbol(tmp.c_str(), tmp.length());
 
-                    if ( std::find(recLexicon.objects.begin(),recLexicon.objects.end(),u) == recLexicon.objects.end() ) {
-                        /* Add to lexicon */
-                        vector< lexCore::Atom > *unitType = new vector< lexCore::Atom >(); unitType->push_back(unitAtom);
-                        recLexicon.addObj(u,unitType);
-                    }
-                }
+                //    if ( std::find(recLexicon.objects.begin(),recLexicon.objects.end(),u) == recLexicon.objects.end() ) {
+                //        /* Add to lexicon */
+                //        vector< lexCore::Atom > *unitType = new vector< lexCore::Atom >(); unitType->push_back(unitAtom);
+                //        recLexicon.addObj(u,unitType);
+                //    }
+                //}
 
-                /* Send observed actions to recognizer and recognize. Note: Need to at least have 2 actions in the observation stream */
+                ///* Send observed actions to recognizer and recognize. Note: Need to at least have 2 actions in the observation stream */
 
-                /* Sliding window for recognition*/
-                if ( trace.size() >= 3 ) {
-                    /* If greater than or equal to three, pop off front */
-                    trace.pop_front();
-                }
+                ///* Sliding window for recognition*/
+                //if ( trace.size() >= 3 ) {
+                //    /* If greater than or equal to three, pop off front */
+                //    trace.pop_front();
+                //}
 
-                if ( trace.size() > 1 ) { recognize(gen); }
+                //if ( trace.size() > 1 ) { recognize(gen); }
 
                 /* Issue: What if we don't recognize a strategy? */
-                if ( bestGoal == "None" ) {
-                    genAPI->startPlanningProcess("Win",goals[0]); //goals[dist2(gen)]);
-                } else {
-                    genAPI->startPlanningProcess("Win",bestGoal);
-                }
+                //if ( bestGoal == "None" ) {
+                genAPI->startPlanningProcess("Win","Win"); 
+                //} else {
+                    //genAPI->startPlanningProcess("Win",bestGoal);
+                //}
             }
         }
 
@@ -121,7 +125,8 @@ class MicroRTSBot : Bot {
             recDriver->parse_string(o.str().c_str());
 
             if ( DEBUGGING > 0 ) { std::cout << "***RECOGNIZING***" << std::endl; }
-            recAPI->processProblemMCTSOptimized(50,timeLimit);
+            /* Provide recognizer 30ms to execute or 50 iterations */
+            recAPI->processProblemMCTSOptimized(50,20);
 
             /* 
                 Find the explanation that contains the highest reward: ( Is this reasonable? )
