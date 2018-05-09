@@ -50,7 +50,7 @@ set(LIB_FILES
     lib/CommWrapper.cpp
 )
 
-add_executable( microRTSBot main.cpp ${LIB_FILES} ${LEXREC_FILES} ${LEXADGEN_FILES} )
-target_link_libraries( microRTSBot LexCore )
-target_link_libraries( microRTSBot libjemalloc )
-target_link_libraries( microRTSBot ${Boost_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} )
+add_executable( microCCG main.cpp ${LIB_FILES} ${LEXREC_FILES} ${LEXADGEN_FILES} )
+target_link_libraries( microCCG LexCore )
+target_link_libraries( microCCG libjemalloc )
+target_link_libraries( microCCG ${Boost_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} )
