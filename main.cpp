@@ -13,23 +13,22 @@ using boost::asio::ip::tcp;
 
 int main(int argc, char* argv[]) {
     try {
-        if (argc != 4) {
-          std::cerr << "Usage: microRTSBot <port> <recognition file> <planning file>" << std::endl;;
+        if (argc != 3) {
+          std::cerr << "Usage: microRTSBot <port> <planning file>" << std::endl;;
           return 1;
         }
 
         boost::asio::io_service io_service;
         tcp::resolver resolver(io_service);
         std::string address = "127.0.0.1"; std::string port = argv[1];
-        std::string recognition_file = argv[2];
-        std::string planning_file = argv[3];
+        std::string planning_file = argv[2];
 
         tcp::resolver::query query(address,port);
         tcp::endpoint endpoint = *resolver.resolve(query);
 
         std::cout << "Starting service" << std::endl;
 
-        MicroRTSBot bot(io_service, endpoint, recognition_file, planning_file);
+        MicroRTSBot bot(io_service, endpoint, planning_file);
 
     } catch (std::exception& e) {
         std::cerr << "Exception: " << e.what() << "\n";
