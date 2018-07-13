@@ -72,6 +72,7 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
 
     private int MAP_WIDTH;
     private int MAP_HEIGHT;
+    private int initial_capacity = 1000;
 
     public MicroCCG_v2(UnitTypeTable a_utt) {
         super(new AStarPathFinding(), 100, -1);
@@ -79,13 +80,13 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
 
         LOGGER.setLevel(level);
         utt = a_utt;
-        unit_table = new HashMap<String, ArrayList<Unit>>();
-        all_usable_player_units = new ArrayList<Unit>();
-        player_worker_units = new ArrayList<Unit>();
-        all_available_resources = new ArrayList<Unit>();
-        all_player_base_units = new ArrayList<Unit>();
+        unit_table = new HashMap<String, ArrayList<Unit>>(initial_capacity);
+        all_usable_player_units = new ArrayList<Unit>(initial_capacity);
+        player_worker_units = new ArrayList<Unit>(initial_capacity);
+        all_available_resources = new ArrayList<Unit>(initial_capacity);
+        all_player_base_units = new ArrayList<Unit>(initial_capacity);
         rand = new Random(System.currentTimeMillis());
-        id_to_game_state = new LinkedHashMap<Integer,GameState>();
+        id_to_game_state = new LinkedHashMap<Integer,GameState>(initial_capacity);
         current_id = 0;
     }
 
@@ -95,14 +96,14 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
 
         LOGGER.setLevel(level);
         utt = a_utt;
-        unit_table = new HashMap<String, ArrayList<Unit>>();
-        all_usable_player_units = new ArrayList<Unit>();
-        player_worker_units = new ArrayList<Unit>();
-        all_available_resources = new ArrayList<Unit>();
-        all_player_base_units = new ArrayList<Unit>();
+        unit_table = new HashMap<String, ArrayList<Unit>>(initial_capacity);
+        all_usable_player_units = new ArrayList<Unit>(initial_capacity);
+        player_worker_units = new ArrayList<Unit>(initial_capacity);
+        all_available_resources = new ArrayList<Unit>(initial_capacity);
+        all_player_base_units = new ArrayList<Unit>(initial_capacity);
         rand = new Random(System.currentTimeMillis());
 
-        id_to_game_state = new LinkedHashMap<Integer,GameState>();
+        id_to_game_state = new LinkedHashMap<Integer,GameState>(initial_capacity);
         current_id = 0;
     }
 
@@ -115,14 +116,14 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
         server_address = a_sa;
         server_port = a_port;
         utt = a_utt;
-        unit_table = new HashMap<String, ArrayList<Unit>>();
-        all_usable_player_units = new ArrayList<Unit>();
-        player_worker_units = new ArrayList<Unit>();
-        all_available_resources = new ArrayList<Unit>();
-        all_player_base_units = new ArrayList<Unit>();
+        unit_table = new HashMap<String, ArrayList<Unit>>(initial_capacity);
+        all_usable_player_units = new ArrayList<Unit>(initial_capacity);
+        player_worker_units = new ArrayList<Unit>(initial_capacity);
+        all_available_resources = new ArrayList<Unit>(initial_capacity);
+        all_player_base_units = new ArrayList<Unit>(initial_capacity);
         rand = new Random(System.currentTimeMillis());
 
-        id_to_game_state = new LinkedHashMap<Integer,GameState>();
+        id_to_game_state = new LinkedHashMap<Integer,GameState>(initial_capacity);
         current_id = 0;
     }
 
