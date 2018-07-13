@@ -1,6 +1,6 @@
 MicroCCG
 ========
-MicroCCG is an adversarial CCG planner for the Real-Time Strategy (RTS) Game microRTS. This agent was developed to participate in the CIG 2018 microRTS tournament. Details about microRTS can be found on the [microRTS Github page](https://github.com/santiontanon/microrts). 
+MicroCCG is an adversarial Combinatory Categorial Grammar planner for the Real-Time Strategy (RTS) Game microRTS. This agent was developed to participate in the CIG 2018 microRTS tournament. Details about microRTS can be found on the [microRTS Github page](https://github.com/santiontanon/microrts). 
 
 This agent has two main components: Adversarial CCG planner (C++) and microRTS bot (Java). For a more in-depth explanation of the agent, please see our paper titled: "microCCG, a CCG-based Game-Playing Agent for microRTS"
 

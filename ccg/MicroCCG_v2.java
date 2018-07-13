@@ -24,12 +24,12 @@ import java.util.logging.Logger;
 
 public class MicroCCG_v2 extends AbstractionLayerAI {
 
-    private Logger LOGGER = Logger.getLogger(MicroCCG_v2.class.getName());
     /* NOTE: All loggers must be commented out prior to tournament */
+    private Logger LOGGER = Logger.getLogger(MicroCCG_v2.class.getName());
+    private Level level = Level.SEVERE;
 
-    private static int DEBUG = 1;
-    private static final int LANGUAGE_XML = 1;
-    private UnitTypeTable utt = null;
+    private static final int LANGUAGE_JSON = 1;
+    private UnitTypeTable utt;
 
     /* Networking code */
     private String server_address = "127.0.0.1";
@@ -52,39 +52,37 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
     private ArrayList<Unit> player_worker_units;
     private ArrayList<Unit> all_available_resources;
     private ArrayList<Unit> all_player_base_units;
-    private ArrayList<Unit> all_available_enemy_units;
     private Random rand;
 
     /* For parameter policy */
     private Unit player_construction_unit = null;
-    private int player_time_to_finish = 0;
-    private boolean player_constructing = false;
-
     private Unit opponent_construction_unit = null;
-    private int opponent_time_to_finish = 0;
-    private boolean opponent_constructing = false;
 
     public GameState actual_current_game_state;
 
     private LinkedHashMap<Integer,GameState> id_to_game_state;
     private int current_id;
 
-    private String [] unit_attack_priority = { "Barracks", "Light", "Heavy", "Ranged", "Base", "Worker"};
+    private String [] unit_attack_priority = { "Ranged", "Light", "Heavy", "Worker", "Barracks", "Base" };
 
     private boolean no_planning_required = false;
     private WorkerRush worker_rush;
+
+    LinkedHashMap< Integer, ArrayList< Pair_CCG< Integer,Integer > > > player_to_barrack_locations;
+
+    private int MAP_WIDTH;
+    private int MAP_HEIGHT;
 
     public MicroCCG_v2(UnitTypeTable a_utt) {
         super(new AStarPathFinding(), 100, -1);
         worker_rush = new WorkerRush(a_utt);
 
-        LOGGER.setLevel(Level.SEVERE);
+        LOGGER.setLevel(level);
         utt = a_utt;
         unit_table = new HashMap<String, ArrayList<Unit>>();
         all_usable_player_units = new ArrayList<Unit>();
         player_worker_units = new ArrayList<Unit>();
         all_available_resources = new ArrayList<Unit>();
-        all_available_enemy_units = new ArrayList<Unit>();
         all_player_base_units = new ArrayList<Unit>();
         rand = new Random(System.currentTimeMillis());
         id_to_game_state = new LinkedHashMap<Integer,GameState>();
@@ -95,13 +93,12 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
         super(new AStarPathFinding(), mt, mi);
         worker_rush = new WorkerRush(a_utt);
 
-        LOGGER.setLevel(Level.SEVERE);
+        LOGGER.setLevel(level);
         utt = a_utt;
         unit_table = new HashMap<String, ArrayList<Unit>>();
         all_usable_player_units = new ArrayList<Unit>();
         player_worker_units = new ArrayList<Unit>();
         all_available_resources = new ArrayList<Unit>();
-        all_available_enemy_units = new ArrayList<Unit>();
         all_player_base_units = new ArrayList<Unit>();
         rand = new Random(System.currentTimeMillis());
 
@@ -114,15 +111,14 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
         super(new AStarPathFinding(), mt, mi);
         worker_rush = new WorkerRush(a_utt);
 
-        LOGGER.setLevel(Level.SEVERE);
+        LOGGER.setLevel(level);
         server_address = a_sa;
         server_port = a_port;
         utt = a_utt;
         unit_table = new HashMap<String, ArrayList<Unit>>();
         all_usable_player_units = new ArrayList<Unit>();
         player_worker_units = new ArrayList<Unit>();
-        //all_available_resources = new ArrayList<Unit>();
-        all_available_enemy_units = new ArrayList<Unit>();
+        all_available_resources = new ArrayList<Unit>();
         all_player_base_units = new ArrayList<Unit>();
         rand = new Random(System.currentTimeMillis());
 
@@ -148,6 +144,7 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
 
         socket = new Socket(server_address, server_port);
         socket.setSoTimeout(2000); /* 1 second before timeout (on the off-chance the agent faults) */
+
         in_pipe = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         out_pipe = new PrintWriter(socket.getOutputStream(), true);
     }
@@ -166,7 +163,7 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
             in_pipe.readLine();
 
             // set the game parameters:
-            out_pipe.append("budget " + TIME_BUDGET + "," + ITERATIONS_BUDGET + "\n");
+            out_pipe.append("budget " + (TIME_BUDGET-5) + "," + ITERATIONS_BUDGET + "\n");
             out_pipe.flush();
 
             // wait for ack:
@@ -215,17 +212,13 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
     }
 
     public PlayerAction prepareActionNonAbstract(String action_name, GameState gs, int player, String min_max) {
-        /*  Return a null action or an empty action?
-        *   Returning null seems to cause the planner to never plan correctly...so..returning an empty action might be better.
-        *   Is this scientifically valid? -> Yes because even if we fail, another action might be executed by a different agent. ..
-        *   If the same agent executes an action and fails, the next action may not fail (there is more than one agent in the game..
-        *   and a conflict might have occurred).
-        * */
-
         /* We might conflict for resources when creating new units */
+        /* Use this cloned game state for resolving conflicts in movement and construction */
+        GameState cloned_gs = gs.clone();
+
         unit_table.clear();
         for (Unit u : gs.getUnits()) {
-            ArrayList<Unit> tmp = null;
+            ArrayList<Unit> tmp;
             if (unit_table.containsKey(u.getType().name)) {
                 tmp = unit_table.get(u.getType().name);
                 tmp.add(u);
@@ -236,34 +229,8 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                 unit_table.put(u.getType().name, tmp);
             }
         }
+
         PlayerAction ret_action = new PlayerAction();
-
-        if ( action_name.contains("produce") ) {
-            if (gs.getPlayer(player).getResources() <= 0) {
-                /* We don't have enough resources */
-                return ret_action;
-            }
-
-            /* Get the number of resources that are being used */
-            int num_resources_currently_used = 0;
-            for (String unit_type : unit_table.keySet()) {
-                for (Unit u : unit_table.get(unit_type)) {
-                    if (u.getPlayer() == player) {
-                        if (gs.getUnitActions().containsKey(u) && gs.getUnitAction(u).getType() == UnitAction.TYPE_PRODUCE) {
-                            num_resources_currently_used += gs.getUnitAction(u).getUnitType().cost;
-                        }
-                    }
-                }
-            }
-
-            String unit_produced = action_name.substring("produce".length(), action_name.length());
-            unit_produced = unit_produced.substring(0, 1).toUpperCase() + unit_produced.substring(1);
-
-            /* If we need to spend more than we can handle, then don't produce */
-            if (utt.getUnitType(unit_produced).cost > (gs.getPlayer(player).getResources() - num_resources_currently_used)) {
-                return ret_action;
-            }
-        }
 
         all_usable_player_units.clear(); /* All units */
         for (String u_type : unit_table.keySet()) {
@@ -295,48 +262,11 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
          *      Find the highest priority unit that is the closest. barracks > bases > offensive > workers
          * */
         if ( !attack_units.isEmpty() ) {
-            /* All offensive units attack */
-            /* Send all units to attack the most important bases. */
-//            Unit highest_priority_enemy_unit = null;
-//            for (String u_type : all_unit_types ) {
-//                if ( unit_table.containsKey(u_type) ) {
-//                    for (Unit u : unit_table.get(u_type)) {
-//                        if (u.getPlayer() != -1 && u.getPlayer() == (1 - player)) {
-//                            /* Enemy unit */
-//                            highest_priority_enemy_unit = u;
-//                            break;
-//                        }
-//                    }
-//                }
-//
-//                if ( highest_priority_enemy_unit != null ) {
-//                    break;
-//                }
-//            }
-//
-//            if ( highest_priority_enemy_unit == null ) {
-//                /* All enemy units are dead...we win! */
-//                return ret_action;
-//            }
-//
-//            /* Attack the highest priority unit */
-//            GameState gs_tmp = gs.clone();
-//            UnitAction test_action = new UnitAction(UnitAction.TYPE_ATTACK_LOCATION,
-//                    highest_priority_enemy_unit.getX(), highest_priority_enemy_unit.getY());
-//            for ( Unit attacking_unit : attack_units ) {
-//                if (attacking_unit.canExecuteAction(test_action, gs)) {
-//                    ret_action.addUnitAction(attacking_unit, test_action);
-//                } else {
-//                    /* Move towards the unit */
-//                    UnitAction move = pf.findPathToAdjacentPosition(attacking_unit,
-//                            highest_priority_enemy_unit.getX() + highest_priority_enemy_unit.getY() * gs.getPhysicalGameState().getWidth(), gs, null);
-//                    if (move != null) {
-//                        ret_action.addUnitAction(attacking_unit, move);
-//                        gs_tmp.issueSafe(ret_action);
-//                    }
-//                }
-//            }
             for (Unit attacking_unit : attack_units) {
+                /* Check if we are in exactly attacking range of the enemy */
+                int attacking_x = attacking_unit.getX();
+                int attacking_y = attacking_unit.getY();
+
                 Unit closest_enemy_unit = null;
                 double min_dist = Math.pow(2, 10);
                 for (String u_type : unit_attack_priority) {
@@ -344,9 +274,9 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                         for (Unit u : unit_table.get(u_type)) {
                             if (u.getPlayer() != -1 && u.getPlayer() == (1 - player)) {
                                 /* Manhattan distance */
-                                double dist = Math.abs(attacking_unit.getX() - u.getX()) + Math.abs(attacking_unit.getY() - u.getY());
+                                double dist = Math.abs(attacking_x - u.getX()) + Math.abs(attacking_y - u.getY());
                                 if (dist < min_dist && pf.pathToPositionInRangeExists(attacking_unit,
-                                        u.getX() + u.getY() * gs.getPhysicalGameState().getWidth(), attacking_unit.getAttackRange(), gs, null)) {
+                                        u.getX() + u.getY() * MAP_WIDTH, attacking_unit.getAttackRange(), cloned_gs, null)) {
                                     closest_enemy_unit = u;
                                     min_dist = dist;
                                 }
@@ -363,20 +293,13 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                     return ret_action;
                 }
 
-                /*  Movement behavior of offensive units
-                *   Optimally, this would be attack, then move.
-                * */
-
-                /* Check if we are in exactly attacking range of the enemy */
-                int attacking_x = attacking_unit.getX();
-                int attacking_y = attacking_unit.getY();
                 int enemy_x = closest_enemy_unit.getX();
                 int enemy_y = closest_enemy_unit.getY();
                 int range = attacking_unit.getAttackRange();
 
                 boolean run_away = false;
                 if ( attacking_unit.getType().name.equals("Ranged") ) {
-                    LinkedList<Unit> units_too_close = (LinkedList<Unit>)gs.getPhysicalGameState().getUnitsAround(attacking_x,attacking_y,range-1);
+                    LinkedList<Unit> units_too_close = (LinkedList<Unit>)gs.getPhysicalGameState().getUnitsAround(attacking_x, attacking_y,range-1);
                     if ( units_too_close.contains(attacking_unit) ) {
                         units_too_close.remove(attacking_unit);
                     }
@@ -397,9 +320,30 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                     } else {
                         /* Move towards the unit */
                         UnitAction move = pf.findPathToAdjacentPosition(attacking_unit,
-                                closest_enemy_unit.getX() + closest_enemy_unit.getY() * gs.getPhysicalGameState().getWidth(), gs, null);
+                                enemy_x + enemy_y * MAP_WIDTH, cloned_gs, null);
                         if (move != null) {
                             ret_action.addUnitAction(attacking_unit, move);
+                            cloned_gs.issueSafe(ret_action);
+                        } else {
+                            ArrayList<Integer> random_move = new ArrayList<Integer>();
+                            boolean [][] free_map = gs.getAllFree();
+                            if ( attacking_x+1 < MAP_WIDTH && free_map[attacking_x+1][attacking_y] ) {
+                                random_move.add(UnitAction.DIRECTION_RIGHT);
+                            }
+                            if ( attacking_y+1 < MAP_HEIGHT && free_map[attacking_x][attacking_y+1] ) {
+                                random_move.add(UnitAction.DIRECTION_DOWN);
+                            }
+                            if ( attacking_x-1 >= 0 && free_map[attacking_x-1][attacking_y] ) {
+                                random_move.add(UnitAction.DIRECTION_LEFT);
+                            }
+                            if ( attacking_y-1 >= 0 && free_map[attacking_x][attacking_y-1] )  {
+                                random_move.add(UnitAction.DIRECTION_UP);
+                            }
+                            if ( !random_move.isEmpty() ) {
+                                ret_action.addUnitAction(attacking_unit, new UnitAction(UnitAction.TYPE_MOVE,
+                                        random_move.get(rand.nextInt(random_move.size()))));
+                                cloned_gs.issueSafe(ret_action);
+                            }
                         }
                     }
                 } else {
@@ -408,31 +352,58 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                     if ( attacking_x - enemy_x < 0 && attacking_x - 1 >= 0 ) {
                         move = new UnitAction(UnitAction.TYPE_MOVE,UnitAction.DIRECTION_LEFT);
                     }
-                    if ( attacking_x - enemy_x > 0 && attacking_x + 1 < gs.getPhysicalGameState().getWidth() ) {
+                    if ( attacking_x - enemy_x > 0 && attacking_x + 1 < MAP_WIDTH ) {
                         move = new UnitAction(UnitAction.TYPE_MOVE,UnitAction.DIRECTION_RIGHT);
                     }
                     if ( attacking_y - enemy_y < 0 && attacking_y - 1 >= 0 ) {
                         move = new UnitAction(UnitAction.TYPE_MOVE,UnitAction.DIRECTION_UP);
                     }
-                    if ( attacking_y - enemy_y > 0 && attacking_y + 1 < gs.getPhysicalGameState().getHeight() ) {
+                    if ( attacking_y - enemy_y > 0 && attacking_y + 1 < MAP_HEIGHT ) {
                         move = new UnitAction(UnitAction.TYPE_MOVE,UnitAction.DIRECTION_DOWN);
                     }
                     if ( move != null ) {
                         ret_action.addUnitAction(attacking_unit, move);
+                        cloned_gs.issueSafe(ret_action);
                     }
                 }
             }
         }
 
-        int rand_num = 0;
+        if ( action_name.contains("produce") ) {
+            if (gs.getPlayer(player).getResources() <= 0) {
+                /* We don't have enough resources */
+                return ret_action;
+            }
 
+            /* Get the number of resources that are being used */
+            int num_resources_currently_used = 0;
+            for (String unit_type : unit_table.keySet()) {
+                for (Unit u : unit_table.get(unit_type)) {
+                    if (u.getPlayer() == player) {
+                        if (gs.getUnitActions().containsKey(u) && gs.getUnitAction(u).getType() == UnitAction.TYPE_PRODUCE) {
+                            num_resources_currently_used += gs.getUnitAction(u).getUnitType().cost;
+                        }
+                    }
+                }
+            }
+
+            String unit_produced = action_name.substring("produce".length(), action_name.length());
+            unit_produced = unit_produced.substring(0, 1).toUpperCase() + unit_produced.substring(1);
+
+            /* If we need to spend more than we can handle, then don't produce */
+            if (utt.getUnitType(unit_produced).cost > (gs.getPlayer(player).getResources() - num_resources_currently_used)) {
+                return ret_action;
+            }
+        }
+
+        int rand_num = 0;
         switch (action_name) {
             case "attack":
                 /* Should never be here */
                 return ret_action;
             case "return":
                 /* Get a unit with resources that's closest to a base */
-                boolean [][] free_map = gs.getAllFree();
+                boolean [][] free_map = cloned_gs.getAllFree();
 
                 all_player_base_units.clear();
                 if (unit_table.containsKey("Base")) {
@@ -452,7 +423,6 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
 
                 Unit closest_base = null;
 
-                GameState gs_tmp = gs.clone();
                 int direction = -1;
                 for (Unit wrkr : player_worker_units) {
                     int x = wrkr.getX();
@@ -487,29 +457,32 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                         } else {
                             /* Move towards the unit */
                             UnitAction move = pf.findPathToAdjacentPosition(wrkr,
-                                    closest_base.getX() + closest_base.getY() * gs.getPhysicalGameState().getWidth(), gs_tmp, null);
+                                    closest_base.getX() + closest_base.getY() * gs.getPhysicalGameState().getWidth(), cloned_gs, null);
                             if ( move != null ) {
                                 ret_action.addUnitAction(wrkr, move);
-                                gs_tmp.issueSafe(ret_action);
+                                cloned_gs.issueSafe(ret_action);
                             } else {
                                 /* Move randomly? */
+                                int worker_x = wrkr.getX();
+                                int worker_y = wrkr.getY();
+
                                 ArrayList<Integer> random_move = new ArrayList<Integer>();
-                                if ( wrkr.getX()+1 < free_map.length && free_map[wrkr.getX()+1][wrkr.getY()] ) {
+                                if ( worker_x+1 < MAP_WIDTH && free_map[worker_x+1][worker_y] ) {
                                     random_move.add(UnitAction.DIRECTION_RIGHT);
                                 }
-                                if ( wrkr.getY()+1 < free_map[0].length && free_map[wrkr.getX()][wrkr.getY()+1] ) {
+                                if ( worker_y+1 < MAP_HEIGHT && free_map[worker_x][worker_y+1] ) {
                                     random_move.add(UnitAction.DIRECTION_DOWN);
                                 }
-                                if ( wrkr.getX()-1 >= 0 && free_map[wrkr.getX()-1][wrkr.getY()] ) {
+                                if ( worker_x-1 >= 0 && free_map[worker_x-1][worker_y] ) {
                                     random_move.add(UnitAction.DIRECTION_LEFT);
                                 }
-                                if ( wrkr.getY()-1 >= 0 && free_map[wrkr.getX()][wrkr.getY()-1] )  {
+                                if ( worker_y-1 >= 0 && free_map[worker_x][worker_y-1] )  {
                                     random_move.add(UnitAction.DIRECTION_UP);
                                 }
                                 if ( !random_move.isEmpty() ) {
                                     ret_action.addUnitAction(wrkr, new UnitAction(UnitAction.TYPE_MOVE,
                                             random_move.get(rand.nextInt(random_move.size()))));
-                                    gs_tmp.issueSafe(ret_action);
+                                    cloned_gs.issueSafe(ret_action);
                                 }
                             }
                         }
@@ -542,19 +515,20 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                     return ret_action;
                 }
                 /* Find closest resource to the first four workers  */
-                gs_tmp = gs.clone();
                 for ( int i = 0; i < player_worker_units.size(); i++) {
                     Unit worker_unit = player_worker_units.get(i);
                     if ( !(worker_unit.getResources() == 0) ) {
                             continue;
                     }
+                    int worker_x = worker_unit.getX();
+                    int worker_y = worker_unit.getY();
 
                     while ( !all_available_resources.isEmpty() ) {
                         Unit closest_resource = null;
                         double min_dist = Math.pow(2, 10);
                         for (Unit u : all_available_resources) {
                             /* Manhattan distance */
-                            double dist = Math.abs(worker_unit.getX() - u.getX()) + Math.abs(worker_unit.getY() - u.getY());
+                            double dist = Math.abs(worker_x - u.getX()) + Math.abs(worker_y - u.getY());
                             if (dist < min_dist) {
                                 closest_resource = u;
                                 min_dist = dist;
@@ -567,18 +541,19 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                         }
 
                         direction = -1;
-                        int x = worker_unit.getX();
-                        int y = worker_unit.getY();
-                        if ((x + 1 == closest_resource.getX()) && (y == closest_resource.getY())) {
+                        int closest_resource_x = closest_resource.getX();
+                        int closest_resource_y = closest_resource.getY();
+
+                        if ((worker_x + 1 == closest_resource_x) && (worker_y == closest_resource_y)) {
                             direction = UnitAction.DIRECTION_RIGHT;
                         }
-                        if ((x == closest_resource.getX()) && (y + 1 == closest_resource.getY())) {
+                        if ((worker_x == closest_resource_x) && (worker_y + 1 == closest_resource_y)) {
                             direction = UnitAction.DIRECTION_DOWN;
                         }
-                        if ((x - 1 == closest_resource.getX()) && (y == closest_resource.getY())) {
+                        if ((worker_x - 1 == closest_resource_x) && (worker_y == closest_resource_y)) {
                             direction = UnitAction.DIRECTION_LEFT;
                         }
-                        if ((x == closest_resource.getX()) && (y - 1 == closest_resource.getY())) {
+                        if ((worker_x == closest_resource_x) && (worker_y - 1 == closest_resource_y)) {
                             direction = UnitAction.DIRECTION_UP;
                         }
 
@@ -588,13 +563,12 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                         } else {
                             /* Move towards the resource */
                             UnitAction move = pf.findPathToAdjacentPosition(worker_unit,
-                                    closest_resource.getX() + closest_resource.getY() * gs.getPhysicalGameState().getWidth(), gs_tmp, null);
+                                    closest_resource_x + closest_resource_y * MAP_WIDTH, cloned_gs, null);
                             if (move != null) {
                                 ret_action.addUnitAction(worker_unit, move);
-                                gs_tmp.issueSafe(ret_action);
+                                cloned_gs.issueSafe(ret_action);
                                 break;
                             } else {
-                                /* If we can't move to it, then no other worker can */
                                 all_available_resources.remove(closest_resource);
                             }
                         }
@@ -611,7 +585,7 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                 ret_action.addUnitAction(all_usable_player_units.get(rand_num), new UnitAction(UnitAction.TYPE_NONE));
                 return ret_action;
             case "produceworker":
-                free_map = gs.getAllFree();
+                free_map = cloned_gs.getAllFree();
 
                 String unit_produced = "Worker";
                 if ( utt.getUnitType(unit_produced).cost > gs.getPlayer(player).getResources() ) {
@@ -627,10 +601,8 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                     }
                 }
 
-                /* Number of allowed workers should be based on the size of the map */
                 /* Assume 12x12 minimum map */
-                int num_allowable_workers = gs.getPhysicalGameState().getWidth()/4;//(gs.getPhysicalGameState().getWidth()*gs.getPhysicalGameState().getHeight())/36;
-                if ( all_player_workers.size() > num_allowable_workers) {
+                if ( all_player_workers.size() > 3) {
                     return ret_action;
                 }
 
@@ -653,10 +625,10 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                 ArrayList<Integer> free_positions = new ArrayList<Integer>();
 
                 /* Get direction of production (Try to create away from nearby resources?) */
-                if (x + 1 < gs.getPhysicalGameState().getWidth() && free_map[x + 1][y] ) {
+                if (x + 1 < MAP_WIDTH && free_map[x + 1][y] ) {
                     free_positions.add(UnitAction.DIRECTION_RIGHT);
                 }
-                if (y + 1 < gs.getPhysicalGameState().getHeight() && free_map[x][y + 1]) {
+                if (y + 1 < MAP_HEIGHT && free_map[x][y + 1]) {
                     free_positions.add(UnitAction.DIRECTION_DOWN);
                 }
                 if (x - 1 >= 0 && free_map[x - 1][y] ) {
@@ -739,41 +711,47 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                 y = construction_unit.getY();
 
                 free_positions = new ArrayList<Integer>();
-                free_map = gs.getAllFree();
-                if (x + 1 < gs.getPhysicalGameState().getWidth() && free_map[x + 1][y] ) {
+                free_map = cloned_gs.getAllFree();
+                ArrayList< Pair_CCG< Integer, Integer > > barrack_locations = player_to_barrack_locations.get(player);
+
+                if ( barrack_locations.contains(new Pair_CCG<Integer, Integer>(x+1, y)) && free_map[x+1][y] ) {
                     free_positions.add(UnitAction.DIRECTION_RIGHT);
                 }
-                if (y + 1 < gs.getPhysicalGameState().getHeight() && free_map[x][y + 1]) {
+                if ( barrack_locations.contains(new Pair_CCG<Integer, Integer>(x, y+1)) && free_map[x][y+1] ) {
                     free_positions.add(UnitAction.DIRECTION_DOWN);
                 }
-                if (x - 1 >= 0 && free_map[x - 1][y] ) {
+                if ( barrack_locations.contains(new Pair_CCG<Integer, Integer>(x-1, y)) && free_map[x-1][y] ) {
                     free_positions.add(UnitAction.DIRECTION_LEFT);
                 }
-                if (y - 1 >= 0 && free_map[x][y - 1]) {
+                if ( barrack_locations.contains(new Pair_CCG<Integer, Integer>(x, y-1)) && free_map[x][y-1] ) {
                     free_positions.add(UnitAction.DIRECTION_UP);
                 }
 
-                if ( free_positions.isEmpty() ) {
+                if ( !free_positions.isEmpty() ) {
+                    rand_num = rand.nextInt(free_positions.size());
+                    ret_action.addUnitAction(construction_unit, new UnitAction(UnitAction.TYPE_PRODUCE, free_positions.get(rand_num), utt.getUnitType(unit_produced)));
                     return ret_action;
                 }
 
-                /* Get a random direction */
-                rand_num = rand.nextInt(free_positions.size());
-                ret_action.addUnitAction(construction_unit, new UnitAction(UnitAction.TYPE_PRODUCE, free_positions.get(rand_num), utt.getUnitType(unit_produced)));
-                if (min_max.equals("min") ) {
-                    opponent_time_to_finish = gs.getTime();
-                    opponent_constructing = true;
-                    opponent_time_to_finish += ret_action.getAction(construction_unit).ETA(construction_unit);
-                } else {
-                    player_time_to_finish = gs.getTime();
-                    player_constructing = true;
-                    player_time_to_finish += ret_action.getAction(construction_unit).ETA(construction_unit);
+                for ( Pair_CCG< Integer, Integer > barrack_location : barrack_locations ) {
+                    /* Move unit here */
+                    if ( gs.getPhysicalGameState().getUnitAt(barrack_location.m_a, barrack_location.m_b) != null && (gs.getPhysicalGameState().getUnitAt(barrack_location.m_a, barrack_location.m_b).getType().name.equals("Barracks")
+                        || gs.getPhysicalGameState().getUnitAt(barrack_location.m_a, barrack_location.m_b).getType().name.equals("Base")) ) {
+                        continue;
+                    }
+                    UnitAction move = pf.findPathToAdjacentPosition(construction_unit,
+                            barrack_location.m_a + barrack_location.m_b * MAP_WIDTH, cloned_gs, null);
+                    if (move != null) {
+                        ret_action.addUnitAction(construction_unit, move);
+                        cloned_gs.issueSafe(ret_action);
+                        break;
+                    }
                 }
                 return ret_action;
             case "producelight":
             case "produceheavy":
             case "produceranged":
-                free_map = gs.getAllFree();
+                free_map = cloned_gs.getAllFree();
 
                 unit_produced = action_name.substring("produce".length(),action_name.length());
 
@@ -802,10 +780,10 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                 y = available_barracks.get(rand_num).getY();
 
                 /* Get direction of production */
-                if (x + 1 < gs.getPhysicalGameState().getWidth() && free_map[x + 1][y]) {
+                if (x + 1 < MAP_WIDTH && free_map[x + 1][y]) {
                     free_positions.add(UnitAction.DIRECTION_RIGHT);
                 }
-                if (y + 1 < gs.getPhysicalGameState().getHeight() && free_map[x][y + 1]) {
+                if (y + 1 < MAP_HEIGHT && free_map[x][y + 1]) {
                     free_positions.add(UnitAction.DIRECTION_DOWN);
                 }
                 if (x - 1 >= 0 && free_map[x - 1][y]) {
@@ -860,7 +838,7 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
         }
     }
 
-    public void execute(int pid) {
+    public void execute() {
         try {
             String game_state_id = in_pipe.readLine();
             out_pipe.write("success\n");
@@ -1026,7 +1004,7 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
             switch (message) {
                 case "execute":
                     /* Get a state and action, and return the next state */
-                    execute(player);
+                    execute();
                     break;
                 case "simulateUntilNextChoicePoint":
                     simulateUnitNextChoicePoint(player);
@@ -1066,7 +1044,6 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
             out_pipe.write("no gg\n");
             out_pipe.flush();
 
-            //sendActions(gs,player);
             actual_current_game_state = gs;
             PlayerAction act = null;
             while (true) {
@@ -1088,14 +1065,106 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
 
     @Override
     public void preGameAnalysis(GameState gs, long milliseconds) throws Exception {
-        /* Minimum 12x12 map required for any planning */
-        if ( gs.getPhysicalGameState().getHeight()*gs.getPhysicalGameState().getWidth() < 144 ) {
+        /* Minimum 10x10 map required for any planning */
+        if ( gs.getPhysicalGameState().getHeight()*gs.getPhysicalGameState().getWidth() < 100 ) {
             /* Start simple worker rush */
-            String message = in_pipe.readLine();
+            in_pipe.readLine();
             out_pipe.write("gameover\n");
             out_pipe.flush();
             no_planning_required = true;
         } else {
+            /* FUTURE WORK: Look into doing a more in-depth map analysis */
+            /* Determine the best location to put the barracks */
+
+            /* From the base, get the closest resource. Put base in opposite direction */
+            unit_table.clear();
+            for (Unit u : gs.getUnits()) {
+                ArrayList<Unit> tmp;
+                if (unit_table.containsKey(u.getType().name)) {
+                    tmp = unit_table.get(u.getType().name);
+                    tmp.add(u);
+                    unit_table.replace(u.getType().name, tmp);
+                } else {
+                    tmp = new ArrayList<Unit>();
+                    tmp.add(u);
+                    unit_table.put(u.getType().name, tmp);
+                }
+            }
+            player_to_barrack_locations = new LinkedHashMap<>();
+
+            int width = gs.getPhysicalGameState().getWidth();
+            MAP_WIDTH = width;
+            int height = gs.getPhysicalGameState().getHeight();
+            MAP_HEIGHT = height;
+
+            for ( Unit base_unit : unit_table.get("Base") ) {
+                ArrayList<Unit> closest_resource_units = new ArrayList<>();
+                for ( Unit resource_unit : unit_table.get("Resource") ) {
+                    double dist = Math.abs(resource_unit.getX() - base_unit.getX()) + Math.abs(resource_unit.getY() - base_unit.getY());
+                    if (dist < 4.0) {
+                        closest_resource_units.add(resource_unit);
+                    }
+                }
+                int base_x = base_unit.getX();
+                int base_y = base_unit.getY();
+
+                ArrayList< Pair_CCG<Integer, Integer> > best_barrack_locations = new ArrayList<>();
+                if ( closest_resource_units.isEmpty() ) {
+                    /* Can place it anywhere near the base */
+                    if ( base_x+1 < width && base_y+1 < height ) {
+                        best_barrack_locations.add(new Pair_CCG<Integer, Integer>(base_x + 1, base_y + 1));
+                    }
+                    if ( base_x-1 >= 0 && base_y-1 >= 0 ) {
+                        best_barrack_locations.add(new Pair_CCG<Integer, Integer>(base_x - 1, base_y - 1));
+                    }
+                    if ( base_x+1 < width && base_y-1 >= 0 ) {
+                        best_barrack_locations.add(new Pair_CCG<Integer, Integer>(base_x + 1, base_y - 1));
+                    }
+                    if ( base_x-1 >= 0 && base_y+1 < height ) {
+                        best_barrack_locations.add(new Pair_CCG<Integer, Integer>(base_x - 1, base_y + 1));
+                    }
+                } else {
+                    /* Place farthest away from the resources to not restrict workers to resources */
+                    ArrayList<Integer> directions_to_place_barracks = new ArrayList<Integer>();
+                    for ( Unit resource : closest_resource_units) {
+                        if (base_x - resource.getX() < 0 && base_x - 1 >= 0) {
+                            directions_to_place_barracks.add(UnitAction.DIRECTION_LEFT);
+                        }
+                        if (base_x - resource.getX() > 0 && base_x + 1 < width) {
+                            directions_to_place_barracks.add(UnitAction.DIRECTION_RIGHT);
+                        }
+                        if (base_y - resource.getY() < 0 && base_y - 1 >= 0) {
+                            directions_to_place_barracks.add(UnitAction.DIRECTION_UP);
+                        }
+                        if (base_y - resource.getY() > 0 && base_y + 1 < height) {
+                            directions_to_place_barracks.add(UnitAction.DIRECTION_DOWN);
+                        }
+                    }
+
+                    int up_or_down = base_y+1;
+                    int freq_up = Collections.frequency(directions_to_place_barracks,UnitAction.DIRECTION_UP);
+                    int freq_down = Collections.frequency(directions_to_place_barracks,UnitAction.DIRECTION_DOWN);
+                    if ( freq_up > freq_down ) {
+                        up_or_down = base_y-1;
+                    }
+
+                    int left_or_right = base_x+1;
+                    int freq_left = Collections.frequency(directions_to_place_barracks,UnitAction.DIRECTION_LEFT);
+                    int freq_right = Collections.frequency(directions_to_place_barracks,UnitAction.DIRECTION_RIGHT);
+                    if ( freq_left > freq_right ) {
+                        left_or_right = base_x-1;
+                    }
+                    best_barrack_locations.add(new Pair_CCG<Integer, Integer>(left_or_right, up_or_down));
+                }
+
+                if ( player_to_barrack_locations.containsKey(base_unit.getPlayer()) ) {
+                    ArrayList< Pair_CCG< Integer,Integer> > tmp = player_to_barrack_locations.get(base_unit.getPlayer());
+                    tmp.addAll(best_barrack_locations);
+                    player_to_barrack_locations.replace(base_unit.getPlayer(),tmp);
+                } else {
+                    player_to_barrack_locations.put(base_unit.getPlayer(), best_barrack_locations);
+                }
+            }
             no_planning_required = false;
         }
     }
@@ -1116,21 +1185,18 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
 
         l.add(new ParameterSpecification("Server Address", String.class, server_address));
         l.add(new ParameterSpecification("Server Port", Integer.class, server_port));
-        l.add(new ParameterSpecification("Language", Integer.class, LANGUAGE_XML));
+        l.add(new ParameterSpecification("Language", Integer.class, LANGUAGE_JSON));
 
         return l;
     }
 
     @Override
     public void gameOver(int winner) throws Exception {
-        /* Send over winner */
+        /* Gracefully shut down the CCG adversarial planner */
         try {
-            String message = in_pipe.readLine();
+            in_pipe.readLine();
             out_pipe.write("gameover\n");
             out_pipe.flush();
-//            p.waitFor(2, TimeUnit.SECONDS);
-//            p.destroy();
-//            System.out.println("GG!");
         } catch ( Exception e ) {
         }
         p.waitFor(2, TimeUnit.SECONDS);
@@ -1138,27 +1204,3 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
         System.out.println("GG!");
     }
 }
-
-//    public PlayerAction getNextActionNonAbstract(GameState gs) {
-//        try {
-//            String action;
-//            PlayerAction next_action = new PlayerAction();
-//            while ( !(action = in_pipe.readLine() ).equals("done") ) {
-//                /* Parse action */
-//                List< Pair<Unit,UnitAction> > unit_to_unit_action_list = PlayerAction.fromJSON(action,gs,utt).getActions();
-//                for ( Pair<Unit,UnitAction> ua : unit_to_unit_action_list ) {
-//                    if ( ua.m_a != null && (gs.getUnitAction(ua.m_a) == null) ) {
-//                        next_action.addUnitAction(ua.m_a, ua.m_b);
-//                    }
-//                }
-//                out_pipe.write("success\n");
-//                out_pipe.flush();
-//            }
-//            out_pipe.write("success\n");
-//            out_pipe.flush();
-//            return next_action;
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
-//        return null;
-//    }
