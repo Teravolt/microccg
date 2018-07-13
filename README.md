@@ -7,9 +7,9 @@ This agent has two main components: Adversarial CCG planner (C++) and microRTS b
 Requirements
 ============
 ELEXIR (Engine for LEXicalized Intent Recognition)
-    Paper: Delaying Commitment in Plan Recognition Using Combinatory Categorial Grammars
-    Author: Christopher Geib
-    Citation: Geib, C. W. 2009. Delaying commitment in plan recognition using combinatory categorial grammars. In Proceedings of the 21st International Joint Conference on Artifical Intelligence, IJCAI’09, 1702–1707. San Francisco, CA, USA: Morgan Kaufmann Publishers Inc. 
+    - Paper: Delaying Commitment in Plan Recognition Using Combinatory Categorial Grammars
+    - Author: Christopher Geib
+    - Citation: Geib, C. W. 2009. Delaying commitment in plan recognition using combinatory categorial grammars. In Proceedings of the 21st International Joint Conference on Artifical Intelligence, IJCAI’09, 1702–1707. San Francisco, CA, USA: Morgan Kaufmann Publishers Inc. 
 
 The ELEXIR system is currently avaiable upon request, but I have provided an executable called *microCCG* created on Ubuntu 16.04 64bit.
  
