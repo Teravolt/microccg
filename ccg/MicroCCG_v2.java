@@ -711,8 +711,30 @@ public class MicroCCG_v2 extends AbstractionLayerAI {
                 y = construction_unit.getY();
 
                 free_positions = new ArrayList<Integer>();
-                free_map = cloned_gs.getAllFree();
                 ArrayList< Pair_CCG< Integer, Integer > > barrack_locations = player_to_barrack_locations.get(player);
+                free_map = cloned_gs.getAllFree();
+
+                if ( barrack_locations.isEmpty() ) {
+                    if (x + 1 < MAP_WIDTH && free_map[x + 1][y] ) {
+                        free_positions.add(UnitAction.DIRECTION_RIGHT);
+                    }
+                    if (y + 1 < MAP_HEIGHT && free_map[x][y + 1]) {
+                        free_positions.add(UnitAction.DIRECTION_DOWN);
+                    }
+                    if (x - 1 >= 0 && free_map[x - 1][y] ) {
+                        free_positions.add(UnitAction.DIRECTION_LEFT);
+                    }
+                    if (y - 1 >= 0 && free_map[x][y - 1]) {
+                        free_positions.add(UnitAction.DIRECTION_UP);
+                    }
+
+                    if ( free_positions.isEmpty() ) {
+                        return ret_action;
+                    }
+                    rand_num = rand.nextInt(free_positions.size());
+                    ret_action.addUnitAction(construction_unit, new UnitAction(UnitAction.TYPE_PRODUCE, free_positions.get(rand_num), utt.getUnitType(unit_produced)));
+                    return ret_action;
+                }
 
                 if ( barrack_locations.contains(new Pair_CCG<Integer, Integer>(x+1, y)) && free_map[x+1][y] ) {
                     free_positions.add(UnitAction.DIRECTION_RIGHT);
