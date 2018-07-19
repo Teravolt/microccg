@@ -2,10 +2,11 @@ cmake_minimum_required(VERSION 2.8)
 
 project(MicroRTSBot)
 
-#set(ELEXIR_DIR "/Users/pavankantharaju/Documents/drexel_university/research/research-code/elexir-master/upgrades/elexir" )
+set(ELEXIR_DIR "/Users/pavankantharaju/Documents/drexel_university/research/research-code/elexir-master/elexir" )
 #set(ELEXIR_DIR "/Users/pavankantharaju/Documents/drexel_university/research/research-code/elexir/" )
-set(ELEXIR_DIR "INSERT-DIRECTORY-OF-ELEXIR" )
+#set(ELEXIR_DIR "INSERT-DIRECTORY-OF-ELEXIR" )
 
+set(Boost_USE_STATIC_LIBS   ON)
 find_package( Boost REQUIRED COMPONENTS thread program_options system )
 
 include(ExternalProject)
